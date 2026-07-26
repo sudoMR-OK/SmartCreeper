@@ -9,9 +9,10 @@
   ],
   "contact": {
     "discord": "https://discord.com/users/_mr_ok",
-    "sources": "https://gitHub.com/sudoMR-OK"
+    "sources": "https://gitHub.com/sudoMR-OK",
+    "license": "https://github.com/sudoMR-OK/SmartCreeper/blob/main/LICENSE"
   },
-  "license": "ARR",
+  "license": "All Right Reserved",
   "icon": "assets/smartcreeperai/icon.jpg",
   "environment": "*",
   "entrypoints": {
