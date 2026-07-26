@@ -6,8 +6,6 @@ This is my first ever mod project which is half worked by AI, half by me (barely
 
 ## How it works  
 
-## Features
-
 ### Sneaky Creeper AI  
 - It checks if the player can see it. If spotted, it flees at 2x speed to find cover. If unspotted, it sneaks up behind the player at 1.2x speed.
 - If it needs to go up to reach the target, it switches to towering mode  (They can tower up now •_•)
