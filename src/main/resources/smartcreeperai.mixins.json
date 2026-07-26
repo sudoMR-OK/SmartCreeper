@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "com.main.smartcreeperai.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "CreeperEntityMixin",
+    "MobEntityMixin"
+  ],
+  "client": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

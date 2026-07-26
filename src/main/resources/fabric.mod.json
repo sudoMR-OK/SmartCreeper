@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "smartcreeperai",
+  "name": "SmartCreeper",
+  "version": "${version}",
+  "description": "Overhauls Creeper AI: Look by yourself what overhauling has done.",
+  "authors": [
+    "Hojayfa Rahman"
+  ],
+  "contact": {
+    "discord": "https://discord.com/users/_mr_ok",
+    "sources": "https://gitHub.com/sudoMR-OK"
+  },
+  "license": "ARR",
+  "icon": "assets/smartcreeperai/icon.jpg",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.main.smartcreeperai.SmartCreeperMod"
+    ]
+  },
+  "mixins": [
+    "smartcreeperai.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.4",
+    "minecraft": "~1.21.1",
+    "fabric": "*"
+  }
+}
