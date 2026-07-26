@@ -1,7 +1,7 @@
 # SmartCreeper
 
 [![Modrinth](https://img.shields.io/badge/Modrinth-SmartCreeper-1bd96a?logo=modrinth&logoColor=white)](https://modrinth.com/mod/SmartCreeper)
-[![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-red)](https://github.com/sudoMR-OK/SmartCreeper/LICENSE)
+[![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-red)](https://github.com/sudoMR-OK/SmartCreeper/blob/main/LICENSE)
 
 A Fabric mod that gives Creepers an actual brain. They sneak, flee, tower up with TNT, and sometimes just stand behind you and vibe until you turn around.
 
