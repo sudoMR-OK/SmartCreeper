@@ -30,12 +30,16 @@ public class CreeperTowerGoal extends Goal {
     private TowerPhase phase;
     private BlockPos ceilingEscapeTarget;
     private int pathSearchCooldown;
+    private BlockPos lastObservedBlockPos;
+    private int pathStallTicks;
 
     public CreeperTowerGoal(CreeperEntity creeper) {
         this.creeper = creeper;
         this.phase = TowerPhase.SEEK_PATH;
         this.ceilingEscapeTarget = null;
         this.pathSearchCooldown = 0;
+        this.lastObservedBlockPos = null;
+        this.pathStallTicks = 0;
         this.setControls(EnumSet.of(Goal.Control.MOVE, Goal.Control.LOOK));
     }
 
@@ -60,6 +64,8 @@ public class CreeperTowerGoal extends Goal {
         this.phase = TowerPhase.SEEK_PATH;
         this.ceilingEscapeTarget = null;
         this.pathSearchCooldown = 0;
+        this.lastObservedBlockPos = null;
+        this.pathStallTicks = 0;
     }
 
     @Override
@@ -79,7 +85,7 @@ public class CreeperTowerGoal extends Goal {
             return false;
         }
 
-        return target.getY() - this.creeper.getY() >= 2.0D && hasTntInInventory();
+        return target.getY() - this.creeper.getY() >= -1.0D && hasTntInInventory();
     }
 
     @Override
@@ -99,7 +105,7 @@ public class CreeperTowerGoal extends Goal {
             return false;
         }
 
-        return target.getY() - this.creeper.getY() >= 1.5D && hasTntInInventory();
+        return target.getY() - this.creeper.getY() >= -1.0D && hasTntInInventory();
     }
 
     private boolean isHeadroomBlocked(BlockPos pos) {
@@ -232,15 +238,12 @@ public class CreeperTowerGoal extends Goal {
         return false;
     }
 
-    private boolean shouldFollowCurrentPath(Path currentPath) {
-        return currentPath != null && !currentPath.isFinished();
-    }
-
     private boolean acquirePath(PlayerEntity target) {
         EntityNavigation navigation = this.creeper.getNavigation();
         if (this.pathSearchCooldown > 0) {
             this.pathSearchCooldown--;
-            return shouldFollowCurrentPath(navigation.getCurrentPath());
+            Path current = navigation.getCurrentPath();
+            return current != null && !current.isFinished();
         }
 
         this.pathSearchCooldown = 4;
@@ -254,15 +257,37 @@ public class CreeperTowerGoal extends Goal {
         return false;
     }
 
+    private boolean trackPathStall(boolean pathActive) {
+        BlockPos currentPos = this.creeper.getBlockPos();
+        if (!pathActive) {
+            this.lastObservedBlockPos = null;
+            this.pathStallTicks = 0;
+            return false;
+        }
+
+        if (this.lastObservedBlockPos != null && this.lastObservedBlockPos.equals(currentPos)) {
+            this.pathStallTicks++;
+        } else {
+            this.lastObservedBlockPos = currentPos;
+            this.pathStallTicks = 0;
+        }
+
+        return this.pathStallTicks >= 10;
+    }
+
     private void enterTowerMode(String reason) {
         logPhaseChange(TowerPhase.TOWER_UP, reason);
         this.ceilingEscapeTarget = null;
+        this.pathStallTicks = 0;
+        this.lastObservedBlockPos = null;
         this.creeper.getNavigation().stop();
     }
 
     private void enterCeilingEscape(String reason) {
         logPhaseChange(TowerPhase.CEILING_ESCAPE, reason);
         this.ceilingEscapeTarget = null;
+        this.pathStallTicks = 0;
+        this.lastObservedBlockPos = null;
         this.creeper.getNavigation().stop();
     }
 
@@ -270,6 +295,8 @@ public class CreeperTowerGoal extends Goal {
         logPhaseChange(TowerPhase.TOWER_UP, reason);
         this.ceilingEscapeTarget = null;
         this.pathSearchCooldown = 0;
+        this.pathStallTicks = 0;
+        this.lastObservedBlockPos = null;
     }
 
     private Vec3d getTowerAdvancePosition(PlayerEntity target) {
@@ -292,18 +319,6 @@ public class CreeperTowerGoal extends Goal {
         return step;
     }
 
-    private void ensureStepSupport(BlockPos currentPos, Vec3d step) {
-        BlockPos stepSupport = BlockPos.ofFloored(step.x, step.y, step.z).down();
-        placeSupportIfNeeded(stepSupport);
-
-        double midX = (currentPos.getX() + 0.5D + step.x) / 2.0D;
-        double midZ = (currentPos.getZ() + 0.5D + step.z) / 2.0D;
-        BlockPos midSupport = BlockPos.ofFloored(midX, currentPos.getY(), midZ).down();
-        if (!midSupport.equals(stepSupport)) {
-            placeSupportIfNeeded(midSupport);
-        }
-    }
-
     private void placeSupportIfNeeded(BlockPos pos) {
         BlockState state = this.creeper.getWorld().getBlockState(pos);
         if (state.isAir() || state.isReplaceable()) {
@@ -311,6 +326,22 @@ public class CreeperTowerGoal extends Goal {
                 SmartCreeperMod.LOGGER.info("[SmartCreeperAI] Creeper placed tower support at " + pos);
             }
         }
+    }
+
+    private void ensureBridgeSupportLine(BlockPos currentPos, Vec3d step) {
+        Vec3d start = new Vec3d(currentPos.getX() + 0.5D, currentPos.getY(), currentPos.getZ() + 0.5D);
+        for (int i = 1; i <= 3; i++) {
+            double t = i / 3.0D;
+            Vec3d sample = start.lerp(step, t);
+            BlockPos support = BlockPos.ofFloored(sample.x, sample.y, sample.z).down();
+            placeSupportIfNeeded(support);
+        }
+    }
+
+    private void ensureStepSupport(BlockPos currentPos, Vec3d step) {
+        BlockPos stepSupport = BlockPos.ofFloored(step.x, step.y, step.z).down();
+        placeSupportIfNeeded(stepSupport);
+        ensureBridgeSupportLine(currentPos, step);
     }
 
     @Override
@@ -385,7 +416,16 @@ public class CreeperTowerGoal extends Goal {
 
         if (this.phase == TowerPhase.SEEK_PATH) {
             Path currentPath = this.creeper.getNavigation().getCurrentPath();
-            if (shouldFollowCurrentPath(currentPath) || acquirePath(player)) {
+            boolean hasActivePath = currentPath != null && !currentPath.isFinished();
+            if (hasActivePath) {
+                if (trackPathStall(true)) {
+                    enterTowerMode("path stalled at edge");
+                }
+                return;
+            }
+
+            if (acquirePath(player)) {
+                trackPathStall(true);
                 return;
             }
 
@@ -415,9 +455,7 @@ public class CreeperTowerGoal extends Goal {
                 }
             }
 
-            if (this.creeper.getNavigation().isIdle() || this.creeper.age % 4 == 0) {
-                this.creeper.getNavigation().startMovingTo(towerStep.x, towerStep.y, towerStep.z, 0.90D);
-            }
+            this.creeper.getNavigation().startMovingTo(towerStep.x, towerStep.y, towerStep.z, 0.90D);
             this.creeper.getMoveControl().moveTo(towerStep.x, towerStep.y, towerStep.z, 0.90D);
         }
     }
