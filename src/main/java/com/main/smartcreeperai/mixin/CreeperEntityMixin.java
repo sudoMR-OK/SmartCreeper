@@ -1,6 +1,7 @@
 package com.main.smartcreeperai.mixin;
 
 import com.main.smartcreeperai.CreeperInventoryProvider;
+import com.main.smartcreeperai.CreeperTowerControlProvider;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.mob.CreeperEntity;
 import net.minecraft.entity.mob.HostileEntity;
@@ -16,7 +17,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(CreeperEntity.class)
-public abstract class CreeperEntityMixin extends HostileEntity implements CreeperInventoryProvider {
+public abstract class CreeperEntityMixin extends HostileEntity implements CreeperInventoryProvider, CreeperTowerControlProvider {
 
     @Shadow private int lastFuseTime;
     @Shadow private int currentFuseTime;
@@ -29,14 +30,15 @@ public abstract class CreeperEntityMixin extends HostileEntity implements Creepe
     @Unique
     private final SimpleInventory tntInventory = new SimpleInventory(1);
 
+    @Unique
+    private boolean smartcreeperai$towerControlLocked;
+
     protected CreeperEntityMixin(EntityType<? extends HostileEntity> entityType, World world) {
         super(entityType, world);
     }
 
     @Inject(method = "createCreeperAttributes", at = @At("RETURN"), cancellable = true)
     private static void onCreateCreeperAttributes(org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<?> cir) {
-        // SUCCESSFUL FIX: Extract the object reference and mutate it directly.
-        // Skipping setReturnValue completely bypasses the strict generic wildcard compiler lock!
         Object returnValue = cir.getReturnValue();
         if (returnValue instanceof net.minecraft.entity.attribute.DefaultAttributeContainer.Builder builder) {
             builder.add(net.minecraft.entity.attribute.EntityAttributes.GENERIC_ATTACK_DAMAGE, 4.0D);
@@ -45,36 +47,21 @@ public abstract class CreeperEntityMixin extends HostileEntity implements Creepe
 
     @Inject(method = "initGoals", at = @At("TAIL"))
     private void onInitGoals(CallbackInfo ci) {
-        // Clear vanilla CreeperIgniteGoal
         this.goalSelector.clear(goal -> goal instanceof net.minecraft.entity.ai.goal.CreeperIgniteGoal);
-        
-        // --- GOAL PRIORITY OVERHAUL ---
-        // We push the Door and Trapdoor interact goals to Priority 0 and 1.
-        // This forces the AI engine to temporarily pause Chasing/Fleeing goals when a door is hit.
-        
-        // Add door-opening goal at priority 0 (Absolute highest priority so it breaks chases/flee freezes)
+
         this.goalSelector.add(0, new com.main.smartcreeperai.CreeperOpenDoorGoal((CreeperEntity)(Object)this));
-
-        // Add custom trapdoor goal at priority 1 (Absolute highest priority)
         this.goalSelector.add(1, new com.main.smartcreeperai.CreeperInteractTrapdoorGoal((CreeperEntity)(Object)this));
+        this.goalSelector.add(2, new com.main.smartcreeperai.CreeperTowerGoal((CreeperEntity)(Object)this));
+        this.goalSelector.add(3, new com.main.smartcreeperai.SneakyCreeperGoal((CreeperEntity)(Object)this));
 
-        // Add SneakyCreeperGoal at priority 2 (Moved down slightly so doors override it)
-        this.goalSelector.add(2, new com.main.smartcreeperai.SneakyCreeperGoal((CreeperEntity)(Object)this));
-
-        // Add towering goal at priority 4 
-        this.goalSelector.add(4, new com.main.smartcreeperai.CreeperTowerGoal((CreeperEntity)(Object)this));
-
-        // Enable door navigation
         if (this.getNavigation() instanceof net.minecraft.entity.ai.pathing.MobNavigation) {
             ((net.minecraft.entity.ai.pathing.MobNavigation) this.getNavigation()).setCanPathThroughDoors(true);
         }
 
-        // Increase follow range attribute to 64 blocks so it doesn't lose track of player
         if (this.getAttributeInstance(net.minecraft.entity.attribute.EntityAttributes.GENERIC_FOLLOW_RANGE) != null) {
             this.getAttributeInstance(net.minecraft.entity.attribute.EntityAttributes.GENERIC_FOLLOW_RANGE).setBaseValue(64.0D);
         }
 
-        // Grant attack damage to creeper: Set to 4.0 (2 hearts of damage)
         if (this.getAttributeInstance(net.minecraft.entity.attribute.EntityAttributes.GENERIC_ATTACK_DAMAGE) != null) {
             this.getAttributeInstance(net.minecraft.entity.attribute.EntityAttributes.GENERIC_ATTACK_DAMAGE).setBaseValue(4.0D);
         } else {
@@ -115,6 +102,16 @@ public abstract class CreeperEntityMixin extends HostileEntity implements Creepe
         return this.tntInventory;
     }
 
+    @Override
+    public boolean smartcreeperai$isTowerControlLocked() {
+        return this.smartcreeperai$towerControlLocked;
+    }
+
+    @Override
+    public void smartcreeperai$setTowerControlLocked(boolean locked) {
+        this.smartcreeperai$towerControlLocked = locked;
+    }
+
     @Inject(method = "writeCustomDataToNbt", at = @At("HEAD"))
     private void writeTntInventoryNbt(NbtCompound nbt, CallbackInfo ci) {
         nbt.put("TntInventory", this.tntInventory.toNbtList(this.getRegistryManager()));
@@ -122,7 +119,7 @@ public abstract class CreeperEntityMixin extends HostileEntity implements Creepe
 
     @Inject(method = "readCustomDataFromNbt", at = @At("HEAD"))
     private void readTntInventoryNbt(NbtCompound nbt, CallbackInfo ci) {
-        if (nbt.contains("TntInventory", 9)) { // 9 is NbtElement.LIST_TYPE
+        if (nbt.contains("TntInventory", 9)) {
             this.tntInventory.readNbtList(nbt.getList("TntInventory", 10), this.getRegistryManager());
         }
     }
