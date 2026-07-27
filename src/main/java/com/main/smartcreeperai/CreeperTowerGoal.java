@@ -104,7 +104,7 @@ public class CreeperTowerGoal extends Goal {
         }
 
         BlockPos currentPos = this.creeper.getBlockPos();
-        if (isSameLevelBridgeScenario(player)) {
+        if (shouldBridgeForPlayer(player)) {
             return hasTntInInventory();
         }
 
@@ -151,6 +151,10 @@ public class CreeperTowerGoal extends Goal {
         double dz = target.getZ() - this.creeper.getZ();
         if (dx * dx + dz * dz > 64.0D * 64.0D) {
             return false;
+        }
+
+        if (this.phase == TowerPhase.BRIDGE_GAP) {
+            return shouldBridgeForPlayer(player) && hasTntInInventory();
         }
 
         if (this.phase != TowerPhase.SEEK_PATH) {
@@ -212,6 +216,13 @@ public class CreeperTowerGoal extends Goal {
         double dz = player.getZ() - this.creeper.getZ();
         double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
         return verticalDiff <= 1.25D && horizontalDistance >= 2.0D;
+    }
+
+    private boolean shouldBridgeForPlayer(PlayerEntity player) {
+        if (!isSameLevelBridgeScenario(player)) {
+            return false;
+        }
+        return getUsableVanillaPath(player) == null;
     }
 
     private boolean isAtPathEnd(Path path) {
@@ -560,7 +571,7 @@ public class CreeperTowerGoal extends Goal {
                 return;
             }
 
-            if (sameLevelBridgeScenario) {
+            if (shouldBridgeForPlayer(player)) {
                 enterBridgeGap("same-level gap without usable path");
                 return;
             }
@@ -583,7 +594,6 @@ public class CreeperTowerGoal extends Goal {
                 this.bridgeProgressTicks = 0;
                 this.lastBridgeSupportPos = null;
                 this.pathSearchCooldown = 0;
-                logPhaseChange(TowerPhase.SEEK_PATH, "vanilla path restored during bridge");
                 this.creeper.getNavigation().startMovingAlong(vanillaPath, 1.10D);
                 return;
             }
@@ -625,7 +635,7 @@ public class CreeperTowerGoal extends Goal {
                 return;
             }
 
-            if (sameLevelBridgeScenario && horizontalDistanceToPlayer >= 2.0D) {
+            if (sameLevelBridgeScenario && horizontalDistanceToPlayer >= 2.0D && shouldBridgeForPlayer(player)) {
                 enterBridgeGap("same-level gap while towering");
                 return;
             }
