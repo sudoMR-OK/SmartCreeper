@@ -14,6 +14,7 @@ import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
+
 import java.util.EnumSet;
 
 public class CreeperTowerGoal extends Goal {
@@ -107,6 +108,10 @@ public class CreeperTowerGoal extends Goal {
             return false;
         }
 
+        if (this.ceilingEscapeMode) {
+            return hasTntInInventory();
+        }
+
         if (!isMidClimbOrScaffolding()) {
             net.minecraft.entity.ai.pathing.Path path = this.creeper.getNavigation().findPathTo(target, 0);
             if (path != null && path.reachesTarget()) {
@@ -142,7 +147,7 @@ public class CreeperTowerGoal extends Goal {
         dirX /= len;
         dirZ /= len;
 
-        for (int step = 1; step <= Math.min(8, (int) len); step++) {
+        for (int step = 1; step <= Math.min(12, (int) len); step++) {
             BlockPos stepPos = BlockPos.ofFloored(start.getX() + 0.5D + dirX * step, start.getY(), start.getZ() + 0.5D + dirZ * step);
             if (isHeadroomBlocked(stepPos)) {
                 return true;
@@ -159,15 +164,9 @@ public class CreeperTowerGoal extends Goal {
     }
 
     private boolean isValidEscapeSpot(BlockPos pos, LivingEntity target, boolean requirePathClear) {
-        if (pos == null) {
-            return false;
-        }
-        if (!isWalkableAt(pos)) {
-            return false;
-        }
-        if (isHeadroomBlocked(pos)) {
-            return false;
-        }
+        if (pos == null) return false;
+        if (!isWalkableAt(pos)) return false;
+        if (isHeadroomBlocked(pos)) return false;
         return !requirePathClear || !isPathHeadBlocked(pos, target);
     }
 
@@ -175,22 +174,18 @@ public class CreeperTowerGoal extends Goal {
         BlockPos bestPos = null;
         double bestScore = Double.MAX_VALUE;
 
-        for (int radius = 2; radius <= 12; radius += 2) {
+        for (int radius = 2; radius <= 16; radius += 2) {
             for (int dx = -radius; dx <= radius; dx++) {
                 for (int dz = -radius; dz <= radius; dz++) {
-                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
-                        continue;
-                    }
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) continue;
 
-                    for (int dy = -2; dy <= 2; dy++) {
+                    for (int dy = -3; dy <= 4; dy++) {
                         BlockPos candidate = start.add(dx, dy, dz);
-                        if (!isValidEscapeSpot(candidate, target, true)) {
-                            continue;
-                        }
+                        if (!isValidEscapeSpot(candidate, target, true)) continue;
 
                         double distToTarget = candidate.getSquaredDistance(target.getPos());
                         double distFromStart = candidate.getSquaredDistance(start.getX() + 0.5D, start.getY(), start.getZ() + 0.5D);
-                        double score = distToTarget + (distFromStart * 0.25D);
+                        double score = distToTarget + (distFromStart * 0.2D);
                         if (score < bestScore) {
                             bestScore = score;
                             bestPos = candidate;
@@ -199,28 +194,22 @@ public class CreeperTowerGoal extends Goal {
                 }
             }
 
-            if (bestPos != null) {
-                break;
-            }
+            if (bestPos != null) break;
         }
 
         if (bestPos == null) {
-            for (int radius = 2; radius <= 14; radius += 2) {
+            for (int radius = 2; radius <= 18; radius += 2) {
                 for (int dx = -radius; dx <= radius; dx++) {
                     for (int dz = -radius; dz <= radius; dz++) {
-                        if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
-                            continue;
-                        }
+                        if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) continue;
 
-                        for (int dy = -2; dy <= 2; dy++) {
+                        for (int dy = -3; dy <= 4; dy++) {
                             BlockPos candidate = start.add(dx, dy, dz);
-                            if (!isValidEscapeSpot(candidate, target, false)) {
-                                continue;
-                            }
+                            if (!isValidEscapeSpot(candidate, target, false)) continue;
 
                             double distToTarget = candidate.getSquaredDistance(target.getPos());
                             double distFromStart = candidate.getSquaredDistance(start.getX() + 0.5D, start.getY(), start.getZ() + 0.5D);
-                            double score = distToTarget + (distFromStart * 0.35D);
+                            double score = distToTarget + (distFromStart * 0.25D);
                             if (score < bestScore) {
                                 bestScore = score;
                                 bestPos = candidate;
@@ -229,9 +218,7 @@ public class CreeperTowerGoal extends Goal {
                     }
                 }
 
-                if (bestPos != null) {
-                    break;
-                }
+                if (bestPos != null) break;
             }
         }
 
@@ -253,9 +240,7 @@ public class CreeperTowerGoal extends Goal {
         if (inv == null || inv.isEmpty()) return false;
         for (int i = 0; i < inv.size(); i++) {
             ItemStack stack = inv.getStack(i);
-            if (!stack.isEmpty() && stack.isOf(Items.TNT)) {
-                return true;
-            }
+            if (!stack.isEmpty() && stack.isOf(Items.TNT)) return true;
         }
         return false;
     }
@@ -357,15 +342,9 @@ public class CreeperTowerGoal extends Goal {
         int stepX = Integer.compare(targetPos.getX(), currentPos.getX());
         int stepZ = Integer.compare(targetPos.getZ(), currentPos.getZ());
 
-        if (stepX != 0) {
-            tryPlaceBridgeBeneath(currentPos.add(stepX, 0, 0));
-        }
-        if (stepZ != 0) {
-            tryPlaceBridgeBeneath(currentPos.add(0, 0, stepZ));
-        }
-        if (stepX != 0 && stepZ != 0) {
-            tryPlaceBridgeBeneath(currentPos.add(stepX, 0, stepZ));
-        }
+        if (stepX != 0) tryPlaceBridgeBeneath(currentPos.add(stepX, 0, 0));
+        if (stepZ != 0) tryPlaceBridgeBeneath(currentPos.add(0, 0, stepZ));
+        if (stepX != 0 && stepZ != 0) tryPlaceBridgeBeneath(currentPos.add(stepX, 0, stepZ));
     }
 
     private void tryPlaceBridgeBeneath(BlockPos pos) {
