@@ -152,6 +152,26 @@ public class CreeperTowerGoal extends Goal {
         return !requirePathClear || !isPathHeadBlocked(pos, target);
     }
 
+    private boolean isSameLevelBridgeScenario(PlayerEntity player) {
+        double verticalDiff = Math.abs(player.getY() - this.creeper.getY());
+        double dx = player.getX() - this.creeper.getX();
+        double dz = player.getZ() - this.creeper.getZ();
+        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+        return verticalDiff <= 1.25D && horizontalDistance >= 2.0D;
+    }
+
+    private boolean isAtPathEnd(Path path) {
+        if (path == null) {
+            return false;
+        }
+        net.minecraft.entity.ai.pathing.PathNode endNode = path.getEnd();
+        if (endNode == null) {
+            return false;
+        }
+        double distSqToEnd = this.creeper.squaredDistanceTo(endNode.x + 0.5D, endNode.y, endNode.z + 0.5D);
+        return distSqToEnd <= 2.25D;
+    }
+
     private BlockPos findCeilingEscapeRoute(BlockPos start, LivingEntity target) {
         BlockPos bestPos = null;
         double bestScore = Double.MAX_VALUE;
@@ -272,7 +292,7 @@ public class CreeperTowerGoal extends Goal {
             this.pathStallTicks = 0;
         }
 
-        return this.pathStallTicks >= 10;
+        return this.pathStallTicks >= 4;
     }
 
     private void enterTowerMode(String reason) {
@@ -309,7 +329,8 @@ public class CreeperTowerGoal extends Goal {
             return current.add(0.0D, 1.0D, 0.0D);
         }
 
-        double stepDistance = Math.min(1.15D, Math.max(0.80D, Math.sqrt(horizontalSq)));
+        double horizontalDistance = Math.sqrt(horizontalSq);
+        double stepDistance = Math.min(1.15D, Math.max(0.80D, horizontalDistance));
         Vec3d step = current.add(horizontal.normalize().multiply(stepDistance));
 
         if (target.getY() > this.creeper.getY()) {
@@ -317,6 +338,21 @@ public class CreeperTowerGoal extends Goal {
         }
 
         return step;
+    }
+
+    private Vec3d getBridgeAdvancePosition(PlayerEntity target) {
+        Vec3d current = this.creeper.getPos();
+        Vec3d delta = target.getPos().subtract(current);
+        Vec3d horizontal = new Vec3d(delta.x, 0.0D, delta.z);
+        double horizontalSq = horizontal.x * horizontal.x + horizontal.z * horizontal.z;
+
+        if (horizontalSq < 0.01D) {
+            return current;
+        }
+
+        double horizontalDistance = Math.sqrt(horizontalSq);
+        double stepDistance = Math.min(2.25D, Math.max(1.6D, horizontalDistance * 0.65D));
+        return current.add(horizontal.normalize().multiply(stepDistance));
     }
 
     private void placeSupportIfNeeded(BlockPos pos) {
@@ -328,11 +364,16 @@ public class CreeperTowerGoal extends Goal {
         }
     }
 
-    private void ensureBridgeSupportLine(BlockPos currentPos, Vec3d step) {
+    private void placeBridgeSupportsToward(PlayerEntity player, BlockPos currentPos) {
         Vec3d start = new Vec3d(currentPos.getX() + 0.5D, currentPos.getY(), currentPos.getZ() + 0.5D);
-        for (int i = 1; i <= 3; i++) {
-            double t = i / 3.0D;
-            Vec3d sample = start.lerp(step, t);
+        Vec3d direction = new Vec3d(player.getX() - start.x, 0.0D, player.getZ() - start.z);
+        if (direction.x * direction.x + direction.z * direction.z < 0.01D) {
+            return;
+        }
+        direction = direction.normalize();
+
+        for (int i = 1; i <= 5; i++) {
+            Vec3d sample = new Vec3d(start.x + direction.x * i, start.y, start.z + direction.z * i);
             BlockPos support = BlockPos.ofFloored(sample.x, sample.y, sample.z).down();
             placeSupportIfNeeded(support);
         }
@@ -341,7 +382,13 @@ public class CreeperTowerGoal extends Goal {
     private void ensureStepSupport(BlockPos currentPos, Vec3d step) {
         BlockPos stepSupport = BlockPos.ofFloored(step.x, step.y, step.z).down();
         placeSupportIfNeeded(stepSupport);
-        ensureBridgeSupportLine(currentPos, step);
+
+        double midX = (currentPos.getX() + 0.5D + step.x) / 2.0D;
+        double midZ = (currentPos.getZ() + 0.5D + step.z) / 2.0D;
+        BlockPos midSupport = BlockPos.ofFloored(midX, currentPos.getY(), midZ).down();
+        if (!midSupport.equals(stepSupport)) {
+            placeSupportIfNeeded(midSupport);
+        }
     }
 
     @Override
@@ -368,6 +415,7 @@ public class CreeperTowerGoal extends Goal {
         BlockPos currentPos = this.creeper.getBlockPos();
         boolean headBlocked = isHeadroomBlocked(currentPos);
         boolean pathBlocked = isPathHeadBlocked(currentPos, player);
+        boolean sameLevelBridgeScenario = isSameLevelBridgeScenario(player);
 
         if (this.phase == TowerPhase.CEILING_ESCAPE) {
             if (this.ceilingEscapeTarget == null || !isValidEscapeSpot(this.ceilingEscapeTarget, player, true)) {
@@ -417,15 +465,22 @@ public class CreeperTowerGoal extends Goal {
         if (this.phase == TowerPhase.SEEK_PATH) {
             Path currentPath = this.creeper.getNavigation().getCurrentPath();
             boolean hasActivePath = currentPath != null && !currentPath.isFinished();
+
             if (hasActivePath) {
-                if (trackPathStall(true)) {
-                    enterTowerMode("path stalled at edge");
+                if (isAtPathEnd(currentPath) && (sameLevelBridgeScenario || this.pathStallTicks >= 4)) {
+                    enterTowerMode("path ended at edge");
+                    return;
                 }
+
+                if (trackPathStall(true)) {
+                    enterTowerMode(sameLevelBridgeScenario ? "same-level gap stalled at edge" : "path stalled at edge");
+                    return;
+                }
+
                 return;
             }
 
             if (acquirePath(player)) {
-                trackPathStall(true);
                 return;
             }
 
@@ -435,6 +490,14 @@ public class CreeperTowerGoal extends Goal {
         if (this.phase == TowerPhase.TOWER_UP) {
             if (headBlocked || pathBlocked) {
                 enterCeilingEscape(headBlocked ? "headroom blocked" : "path blocked by ceiling");
+                return;
+            }
+
+            if (sameLevelBridgeScenario) {
+                placeBridgeSupportsToward(player, currentPos);
+                Vec3d bridgeStep = getBridgeAdvancePosition(player);
+                this.creeper.getNavigation().startMovingTo(bridgeStep.x, this.creeper.getY(), bridgeStep.z, 1.00D);
+                this.creeper.getMoveControl().moveTo(bridgeStep.x, this.creeper.getY(), bridgeStep.z, 1.00D);
                 return;
             }
 
