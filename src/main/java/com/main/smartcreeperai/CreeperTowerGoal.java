@@ -226,6 +226,14 @@ public class CreeperTowerGoal extends Goal {
         return distSqToEnd <= 2.25D;
     }
 
+    private Path getUsableVanillaPath(PlayerEntity target) {
+        Path path = this.creeper.getNavigation().findPathTo(target, 0);
+        if (path != null && path.reachesTarget()) {
+            return path;
+        }
+        return null;
+    }
+
     private BlockPos findCeilingEscapeRoute(BlockPos start, LivingEntity target) {
         final int baseX = start.getX();
         final int baseY = start.getY();
@@ -563,6 +571,20 @@ public class CreeperTowerGoal extends Goal {
         if (this.phase == TowerPhase.BRIDGE_GAP) {
             if (headBlocked) {
                 enterCeilingEscape("headroom blocked during bridge");
+                return;
+            }
+
+            Path vanillaPath = getUsableVanillaPath(player);
+            if (vanillaPath != null) {
+                this.bridgeTargetPos = null;
+                this.ceilingEscapeTarget = null;
+                this.pathStallTicks = 0;
+                this.lastObservedBlockPos = null;
+                this.bridgeProgressTicks = 0;
+                this.lastBridgeSupportPos = null;
+                this.pathSearchCooldown = 0;
+                logPhaseChange(TowerPhase.SEEK_PATH, "vanilla path restored during bridge");
+                this.creeper.getNavigation().startMovingAlong(vanillaPath, 1.10D);
                 return;
             }
 
