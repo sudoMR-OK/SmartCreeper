@@ -227,6 +227,11 @@ public class CreeperTowerGoal extends Goal {
     }
 
     private BlockPos findCeilingEscapeRoute(BlockPos start, LivingEntity target) {
+        // Root the search at the creeper's feet-level block, spread only in X/Z, and scan upward in Y.
+        final int baseX = start.getX();
+        final int baseY = start.getY();
+        final int baseZ = start.getZ();
+
         BlockPos bestPos = null;
         double bestScore = Double.MAX_VALUE;
 
@@ -238,7 +243,7 @@ public class CreeperTowerGoal extends Goal {
                     }
 
                     for (int dy = 0; dy <= 7; dy++) {
-                        BlockPos candidate = start.add(dx, dy, dz);
+                        BlockPos candidate = new BlockPos(baseX + dx, baseY + dy, baseZ + dz);
                         if (!isValidEscapeColumn(candidate)) {
                             continue;
                         }
