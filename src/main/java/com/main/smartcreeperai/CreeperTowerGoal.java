@@ -183,23 +183,22 @@ public class CreeperTowerGoal extends Goal {
         BlockPos bestPos = null;
         double bestScore = Double.MAX_VALUE;
 
-        for (int radius = 2; radius <= 18; radius += 2) {
+        for (int radius = 0; radius <= 6; radius++) {
             for (int dx = -radius; dx <= radius; dx++) {
                 for (int dz = -radius; dz <= radius; dz++) {
                     if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
                         continue;
                     }
 
-                    for (int dy = 1; dy <= 8; dy++) {
+                    for (int dy = 2; dy <= 10; dy++) {
                         BlockPos candidate = start.add(dx, dy, dz);
                         if (!isValidEscapeSpot(candidate, target, true)) {
                             continue;
                         }
 
-                        double distToTarget = candidate.getSquaredDistance(target.getPos());
-                        double distFromStart = candidate.getSquaredDistance(start.getX() + 0.5D, start.getY(), start.getZ() + 0.5D);
-                        double score = distToTarget + (distFromStart * 0.2D);
-                        score -= dy * 3.0D;
+                        double horizontalPenalty = (dx * dx + dz * dz) * 6.0D;
+                        double distToTarget = candidate.getSquaredDistance(target.getPos()) * 0.15D;
+                        double score = horizontalPenalty + distToTarget - (dy * 4.0D);
                         if (score < bestScore) {
                             bestScore = score;
                             bestPos = candidate;
@@ -214,23 +213,22 @@ public class CreeperTowerGoal extends Goal {
         }
 
         if (bestPos == null) {
-            for (int radius = 2; radius <= 20; radius += 2) {
+            for (int radius = 0; radius <= 8; radius++) {
                 for (int dx = -radius; dx <= radius; dx++) {
                     for (int dz = -radius; dz <= radius; dz++) {
                         if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
                             continue;
                         }
 
-                        for (int dy = 1; dy <= 8; dy++) {
+                        for (int dy = 2; dy <= 10; dy++) {
                             BlockPos candidate = start.add(dx, dy, dz);
                             if (!isValidEscapeSpot(candidate, target, false)) {
                                 continue;
                             }
 
-                            double distToTarget = candidate.getSquaredDistance(target.getPos());
-                            double distFromStart = candidate.getSquaredDistance(start.getX() + 0.5D, start.getY(), start.getZ() + 0.5D);
-                            double score = distToTarget + (distFromStart * 0.25D);
-                            score -= dy * 2.0D;
+                            double horizontalPenalty = (dx * dx + dz * dz) * 5.0D;
+                            double distToTarget = candidate.getSquaredDistance(target.getPos()) * 0.12D;
+                            double score = horizontalPenalty + distToTarget - (dy * 4.5D);
                             if (score < bestScore) {
                                 bestScore = score;
                                 bestPos = candidate;
@@ -359,19 +357,26 @@ public class CreeperTowerGoal extends Goal {
         return step;
     }
 
-    private Vec3d getBridgeAdvancePosition(PlayerEntity target) {
-        Vec3d current = this.creeper.getPos();
-        Vec3d delta = target.getPos().subtract(current);
-        Vec3d horizontal = new Vec3d(delta.x, 0.0D, delta.z);
-        double horizontalSq = horizontal.x * horizontal.x + horizontal.z * horizontal.z;
+    private BlockPos getBridgeForwardBlock(PlayerEntity player, BlockPos currentPos) {
+        double dx = player.getX() - (currentPos.getX() + 0.5D);
+        double dz = player.getZ() - (currentPos.getZ() + 0.5D);
 
-        if (horizontalSq < 0.01D) {
-            return current;
+        int stepX = dx > 0.15D ? 1 : dx < -0.15D ? -1 : 0;
+        int stepZ = dz > 0.15D ? 1 : dz < -0.15D ? -1 : 0;
+
+        if (stepX == 0 && stepZ == 0) {
+            if (Math.abs(dx) >= Math.abs(dz)) {
+                stepX = dx >= 0.0D ? 1 : -1;
+            } else {
+                stepZ = dz >= 0.0D ? 1 : -1;
+            }
         }
 
-        double horizontalDistance = Math.sqrt(horizontalSq);
-        double stepDistance = Math.min(2.35D, Math.max(1.7D, horizontalDistance * 0.7D));
-        return current.add(horizontal.normalize().multiply(stepDistance));
+        if (stepX == 0 && stepZ == 0) {
+            return currentPos;
+        }
+
+        return currentPos.add(stepX, 0, stepZ);
     }
 
     private void placeSupportIfNeeded(BlockPos pos) {
@@ -387,17 +392,18 @@ public class CreeperTowerGoal extends Goal {
     }
 
     private void placeBridgeSupportsToward(PlayerEntity player, BlockPos currentPos) {
-        Vec3d start = new Vec3d(currentPos.getX() + 0.5D, currentPos.getY(), currentPos.getZ() + 0.5D);
-        Vec3d direction = new Vec3d(player.getX() - start.x, 0.0D, player.getZ() - start.z);
-        if (direction.x * direction.x + direction.z * direction.z < 0.01D) {
+        BlockPos forwardBlock = getBridgeForwardBlock(player, currentPos);
+        if (forwardBlock.equals(currentPos)) {
             return;
         }
-        direction = direction.normalize();
 
-        for (int i = 1; i <= 6; i++) {
-            Vec3d sample = new Vec3d(start.x + direction.x * i, start.y, start.z + direction.z * i);
-            BlockPos support = BlockPos.ofFloored(sample.x, sample.y, sample.z).down();
-            placeSupportIfNeeded(support);
+        placeSupportIfNeeded(forwardBlock.down());
+
+        int stepX = Integer.compare(forwardBlock.getX(), currentPos.getX());
+        int stepZ = Integer.compare(forwardBlock.getZ(), currentPos.getZ());
+        BlockPos secondStep = forwardBlock.add(stepX, 0, stepZ);
+        if (!secondStep.equals(forwardBlock)) {
+            placeSupportIfNeeded(secondStep.down());
         }
     }
 
@@ -474,21 +480,14 @@ public class CreeperTowerGoal extends Goal {
             }
 
             BlockPos upwardFallback = currentPos.up(2);
-            if (!isHeadroomBlocked(currentPos) && isWalkableAt(upwardFallback)) {
+            if (isWalkableAt(upwardFallback)) {
                 this.creeper.getNavigation().startMovingTo(upwardFallback.getX() + 0.5D, upwardFallback.getY(), upwardFallback.getZ() + 0.5D, 1.0D);
                 this.creeper.getMoveControl().moveTo(upwardFallback.getX() + 0.5D, upwardFallback.getY(), upwardFallback.getZ() + 0.5D, 1.0D);
                 return;
             }
 
-            Vec3d away = new Vec3d(this.creeper.getX() - player.getX(), 0.0D, this.creeper.getZ() - player.getZ());
-            if (away.x * away.x + away.z * away.z < 0.01D) {
-                away = new Vec3d(1.0D, 0.0D, 0.0D);
-            } else {
-                away = away.normalize();
-            }
-            Vec3d fallback = this.creeper.getPos().add(away.multiply(3.5D));
-            this.creeper.getNavigation().startMovingTo(fallback.x, this.creeper.getY(), fallback.z, 1.0D);
-            this.creeper.getMoveControl().moveTo(fallback.x, this.creeper.getY(), fallback.z, 1.0D);
+            this.creeper.getJumpControl().setActive();
+            this.creeper.getNavigation().stop();
             return;
         }
 
@@ -539,23 +538,27 @@ public class CreeperTowerGoal extends Goal {
 
             placeBridgeSupportsToward(player, currentPos);
 
-            Vec3d bridgeStep = getBridgeAdvancePosition(player);
-            BlockPos bridgeStepPos = BlockPos.ofFloored(bridgeStep.x, bridgeStep.y, bridgeStep.z).down();
-            if (bridgeStepPos.equals(this.lastBridgeSupportPos)) {
+            BlockPos forwardBlock = getBridgeForwardBlock(player, currentPos);
+            if (forwardBlock.equals(currentPos)) {
+                enterTowerMode("bridge target unresolved");
+                return;
+            }
+
+            if (forwardBlock.equals(this.lastBridgeSupportPos)) {
                 this.bridgeProgressTicks++;
             } else {
-                this.lastBridgeSupportPos = bridgeStepPos;
+                this.lastBridgeSupportPos = forwardBlock;
                 this.bridgeProgressTicks = 0;
             }
 
-            if (this.bridgeProgressTicks >= 6) {
+            if (this.bridgeProgressTicks >= 3) {
+                placeSupportIfNeeded(forwardBlock.down());
                 this.bridgeProgressTicks = 0;
-                placeSupportIfNeeded(bridgeStepPos);
             }
 
-            placeSupportIfNeeded(bridgeStepPos);
-            this.creeper.getNavigation().startMovingTo(bridgeStep.x, this.creeper.getY(), bridgeStep.z, 1.05D);
-            this.creeper.getMoveControl().moveTo(bridgeStep.x, this.creeper.getY(), bridgeStep.z, 1.05D);
+            placeSupportIfNeeded(forwardBlock.down());
+            this.creeper.getNavigation().startMovingTo(forwardBlock.getX() + 0.5D, this.creeper.getY(), forwardBlock.getZ() + 0.5D, 1.0D);
+            this.creeper.getMoveControl().moveTo(forwardBlock.getX() + 0.5D, this.creeper.getY(), forwardBlock.getZ() + 0.5D, 1.0D);
             return;
         }
 
